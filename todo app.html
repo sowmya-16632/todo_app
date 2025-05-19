@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fantastic To-Do App</title>
+    <title>Ultimate To-Do App</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
@@ -47,7 +47,7 @@
         }
 
         .container {
-            max-width: 800px;
+            max-width: 1000px;
             margin: 0 auto;
             padding: 20px;
             background: var(--card-bg);
@@ -79,10 +79,6 @@
             gap: 8px;
         }
 
-        .theme-toggle:hover {
-            opacity: 0.9;
-        }
-
         .input-container {
             display: flex;
             gap: 10px;
@@ -99,11 +95,6 @@
             font-size: 16px;
             background: var(--card-bg);
             color: var(--dark);
-        }
-
-        #task-input:focus {
-            border-color: var(--primary);
-            outline: none;
         }
 
         .priority-select, .category-select, .due-date {
@@ -123,10 +114,6 @@
             cursor: pointer;
             font-size: 16px;
             white-space: nowrap;
-        }
-
-        #add-btn:hover {
-            opacity: 0.9;
         }
 
         .controls {
@@ -181,6 +168,7 @@
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
             border: 1px solid var(--border);
             gap: 15px;
+            position: relative;
         }
 
         .task-checkbox {
@@ -260,7 +248,7 @@
             gap: 10px;
         }
 
-        .delete-btn, .edit-btn {
+        .delete-btn, .edit-btn, .reminder-btn {
             padding: 5px 10px;
             border-radius: 5px;
             cursor: pointer;
@@ -277,13 +265,63 @@
             background-color: var(--primary);
         }
 
-        .stats {
-            text-align: center;
-            color: var(--gray);
-            font-size: 14px;
+        .reminder-btn {
+            background-color: var(--secondary);
         }
 
-        @media (max-width: 600px) {
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            color: var(--gray);
+            font-size: 14px;
+            padding: 10px 0;
+        }
+
+        .progress-container {
+            width: 100%;
+            background-color: var(--border);
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+
+        .progress-bar {
+            height: 10px;
+            border-radius: 5px;
+            background-color: var(--primary);
+            width: 0%;
+            transition: width 0.5s;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px;
+            background: var(--primary);
+            color: white;
+            border-radius: 5px;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+            transform: translateX(200%);
+            transition: transform 0.3s;
+            z-index: 1000;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .drag-handle {
+            cursor: move;
+            padding: 0 10px;
+            color: var(--gray);
+        }
+
+        .task-item.dragging {
+            opacity: 0.5;
+            border: 2px dashed var(--primary);
+        }
+
+        @media (max-width: 768px) {
             .input-container {
                 flex-direction: column;
             }
@@ -295,20 +333,30 @@
             .filter-buttons {
                 justify-content: center;
             }
+            
+            .task-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .task-actions {
+                width: 100%;
+                justify-content: flex-end;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1><i class="fas fa-tasks"></i> Fantastic To-Do</h1>
+            <h1><i class="fas fa-tasks"></i> Ultimate To-Do</h1>
             <button class="theme-toggle" id="theme-toggle">
                 <i class="fas fa-moon"></i> Dark Mode
             </button>
         </div>
         
         <div class="input-container">
-            <input type="text" id="task-input" placeholder="What needs to be done?">
+            <input type="text" id="task-input" placeholder="What needs to be done?" autofocus>
             <select class="priority-select" id="priority-select">
                 <option value="low">Low Priority</option>
                 <option value="medium">Medium Priority</option>
@@ -324,11 +372,16 @@
             <button id="add-btn">Add Task</button>
         </div>
         
+        <div class="progress-container">
+            <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        
         <div class="controls">
             <div class="filter-buttons">
                 <button class="filter-btn active" data-filter="all">All</button>
                 <button class="filter-btn" data-filter="active">Active</button>
                 <button class="filter-btn" data-filter="completed">Completed</button>
+                <button class="filter-btn" data-filter="today">Today</button>
             </div>
             <input type="text" class="search-box" id="search-box" placeholder="Search tasks...">
         </div>
@@ -337,9 +390,14 @@
             <!-- Tasks will be added here dynamically -->
         </ul>
         
-        <div class="stats" id="stats">
+        <div class="stats">
             <span id="task-count">0</span> tasks remaining
+            <span id="completed-count">0</span> completed
         </div>
+    </div>
+
+    <div class="notification" id="notification">
+        Task reminder!
     </div>
 
     <script>
@@ -354,15 +412,22 @@
             const filterButtons = document.querySelectorAll('.filter-btn');
             const searchBox = document.getElementById('search-box');
             const taskCount = document.getElementById('task-count');
+            const completedCount = document.getElementById('completed-count');
             const themeToggle = document.getElementById('theme-toggle');
+            const progressBar = document.getElementById('progress-bar');
+            const notification = document.getElementById('notification');
             
             // State
             let tasks = JSON.parse(localStorage.getItem('tasks')) || [];
             let currentFilter = 'all';
             let searchQuery = '';
+            let draggedItem = null;
+            let reminderTimeouts = {};
             
             // Initialize
             renderTasks();
+            checkReminders();
+            setupDragAndDrop();
             
             // Theme Toggle
             themeToggle.addEventListener('click', () => {
@@ -371,7 +436,14 @@
                 themeToggle.innerHTML = isDark 
                     ? '<i class="fas fa-sun"></i> Light Mode' 
                     : '<i class="fas fa-moon"></i> Dark Mode';
+                localStorage.setItem('darkMode', isDark);
             });
+            
+            // Load saved theme preference
+            if (localStorage.getItem('darkMode') === 'true') {
+                document.body.classList.add('dark-mode');
+                themeToggle.innerHTML = '<i class="fas fa-sun"></i> Light Mode';
+            }
             
             // Add Task
             function addTask() {
@@ -381,20 +453,26 @@
                 const due = dueDate.value;
                 
                 if (text) {
-                    tasks.push({
+                    const newTask = {
                         id: Date.now(),
                         text,
                         priority,
                         category,
                         due,
                         completed: false,
-                        createdAt: new Date().toISOString()
-                    });
+                        createdAt: new Date().toISOString(),
+                        reminder: null
+                    };
+                    
+                    tasks.push(newTask);
                     
                     taskInput.value = '';
                     dueDate.value = '';
                     saveTasks();
                     renderTasks();
+                    
+                    // Show notification
+                    showNotification('Task added successfully!');
                 }
             }
             
@@ -403,16 +481,31 @@
                 const task = tasks.find(task => task.id === id);
                 if (task) {
                     task.completed = !task.completed;
+                    
+                    // Clear reminder if task is completed
+                    if (task.completed && task.reminder) {
+                        clearReminder(task.id);
+                    }
+                    
                     saveTasks();
                     renderTasks();
+                    
+                    // Show notification
+                    showNotification(`Task marked as ${task.completed ? 'completed' : 'active'}`);
                 }
             }
             
             // Delete Task
             function deleteTask(id) {
+                // Clear any existing reminder
+                clearReminder(id);
+                
                 tasks = tasks.filter(task => task.id !== id);
                 saveTasks();
                 renderTasks();
+                
+                // Show notification
+                showNotification('Task deleted');
             }
             
             // Edit Task
@@ -425,12 +518,154 @@
                     task.text = newText.trim();
                     saveTasks();
                     renderTasks();
+                    
+                    // Show notification
+                    showNotification('Task updated');
                 }
+            }
+            
+            // Set Reminder
+            function setReminder(id) {
+                const task = tasks.find(task => task.id === id);
+                if (!task) return;
+                
+                const reminderTime = prompt("Set reminder (minutes from now):", "30");
+                if (reminderTime && !isNaN(reminderTime)) {
+                    const minutes = parseInt(reminderTime);
+                    
+                    // Clear any existing reminder
+                    clearReminder(id);
+                    
+                    // Set new reminder
+                    const reminderDate = new Date();
+                    reminderDate.setMinutes(reminderDate.getMinutes() + minutes);
+                    task.reminder = reminderDate.toISOString();
+                    
+                    // Set timeout for reminder
+                    reminderTimeouts[id] = setTimeout(() => {
+                        showNotification(`Reminder: ${task.text}`);
+                        task.reminder = null;
+                        saveTasks();
+                        renderTasks();
+                    }, minutes * 60 * 1000);
+                    
+                    saveTasks();
+                    renderTasks();
+                    
+                    // Show notification
+                    showNotification(`Reminder set for ${minutes} minutes from now`);
+                }
+            }
+            
+            // Clear Reminder
+            function clearReminder(id) {
+                if (reminderTimeouts[id]) {
+                    clearTimeout(reminderTimeouts[id]);
+                    delete reminderTimeouts[id];
+                }
+                
+                const task = tasks.find(task => task.id === id);
+                if (task) {
+                    task.reminder = null;
+                }
+            }
+            
+            // Check for reminders on load
+            function checkReminders() {
+                const now = new Date();
+                tasks.forEach(task => {
+                    if (task.reminder && !task.completed) {
+                        const reminderDate = new Date(task.reminder);
+                        if (reminderDate > now) {
+                            const minutes = Math.round((reminderDate - now) / 60000);
+                            reminderTimeouts[task.id] = setTimeout(() => {
+                                showNotification(`Reminder: ${task.text}`);
+                                task.reminder = null;
+                                saveTasks();
+                                renderTasks();
+                            }, minutes * 60 * 1000);
+                        } else {
+                            task.reminder = null;
+                        }
+                    }
+                });
+                saveTasks();
+            }
+            
+            // Show Notification
+            function showNotification(message) {
+                notification.textContent = message;
+                notification.classList.add('show');
+                
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                }, 3000);
             }
             
             // Save to LocalStorage
             function saveTasks() {
                 localStorage.setItem('tasks', JSON.stringify(tasks));
+                updateProgress();
+            }
+            
+            // Update Progress Bar
+            function updateProgress() {
+                const totalTasks = tasks.length;
+                const completedTasks = tasks.filter(task => task.completed).length;
+                const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+                
+                progressBar.style.width = `${progress}%`;
+            }
+            
+            // Setup Drag and Drop
+            function setupDragAndDrop() {
+                taskList.addEventListener('dragstart', (e) => {
+                    if (e.target.classList.contains('drag-handle')) {
+                        draggedItem = e.target.closest('.task-item');
+                        e.target.closest('.task-item').classList.add('dragging');
+                        e.dataTransfer.setData('text/plain', draggedItem.dataset.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                    }
+                });
+                
+                taskList.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    const afterElement = getDragAfterElement(e.clientY);
+                    const draggable = document.querySelector('.dragging');
+                    
+                    if (afterElement == null) {
+                        taskList.appendChild(draggable);
+                    } else {
+                        taskList.insertBefore(draggable, afterElement);
+                    }
+                });
+                
+                taskList.addEventListener('dragend', (e) => {
+                    const draggable = document.querySelector('.dragging');
+                    if (draggable) {
+                        draggable.classList.remove('dragging');
+                        
+                        // Update task order in the array
+                        const newOrder = Array.from(taskList.children).map(el => parseInt(el.dataset.id));
+                        tasks.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
+                        saveTasks();
+                    }
+                });
+                
+                function getDragAfterElement(y) {
+                    const draggableElements = [...taskList.querySelectorAll('.task-item:not(.dragging)')];
+                    
+                    return draggableElements.reduce((closest, child) => {
+                        const box = child.getBoundingClientRect();
+                        const offset = y - box.top - box.height / 2;
+                        
+                        if (offset < 0 && offset > closest.offset) {
+                            return { offset: offset, element: child };
+                        } else {
+                            return closest;
+                        }
+                    }, { offset: Number.NEGATIVE_INFINITY }).element;
+                }
             }
             
             // Filter & Render Tasks
@@ -441,7 +676,8 @@
                     const matchesFilter = 
                         currentFilter === 'all' || 
                         (currentFilter === 'active' && !task.completed) || 
-                        (currentFilter === 'completed' && task.completed);
+                        (currentFilter === 'completed' && task.completed) ||
+                        (currentFilter === 'today' && isToday(task.due));
                     
                     const matchesSearch = 
                         task.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -453,9 +689,10 @@
                 if (filteredTasks.length === 0) {
                     const emptyMessage = document.createElement('li');
                     emptyMessage.textContent = 
-                        currentFilter === 'all' ? 'No tasks yet!' : 
+                        currentFilter === 'all' ? 'No tasks yet! Add one above.' : 
                         currentFilter === 'active' ? 'No active tasks!' : 
-                        'No completed tasks!';
+                        currentFilter === 'completed' ? 'No completed tasks!' :
+                        'No tasks due today!';
                     emptyMessage.style.textAlign = 'center';
                     emptyMessage.style.padding = '20px';
                     emptyMessage.style.color = 'var(--gray)';
@@ -464,13 +701,23 @@
                     filteredTasks.forEach(task => {
                         const taskItem = document.createElement('li');
                         taskItem.className = 'task-item';
+                        taskItem.dataset.id = task.id;
+                        taskItem.draggable = true;
                         
+                        // Drag handle
+                        const dragHandle = document.createElement('span');
+                        dragHandle.className = 'drag-handle';
+                        dragHandle.innerHTML = '<i class="fas fa-grip-vertical"></i>';
+                        dragHandle.draggable = true;
+                        
+                        // Checkbox
                         const checkbox = document.createElement('input');
                         checkbox.type = 'checkbox';
                         checkbox.className = 'task-checkbox';
                         checkbox.checked = task.completed;
                         checkbox.addEventListener('change', () => toggleTask(task.id));
                         
+                        // Task content
                         const taskContent = document.createElement('div');
                         taskContent.className = 'task-content';
                         
@@ -511,6 +758,15 @@
                             dueDateElement.innerHTML = '<i class="far fa-calendar-alt"></i> No deadline';
                         }
                         
+                        // Reminder indicator
+                        if (task.reminder && !task.completed) {
+                            const reminderDate = new Date(task.reminder);
+                            const reminderElement = document.createElement('span');
+                            reminderElement.className = 'task-reminder';
+                            reminderElement.innerHTML = `<i class="fas fa-bell"></i> ${formatReminderTime(reminderDate)}`;
+                            taskMeta.appendChild(reminderElement);
+                        }
+                        
                         taskMeta.appendChild(priorityBadge);
                         taskMeta.appendChild(categoryBadge);
                         taskMeta.appendChild(dueDateElement);
@@ -518,23 +774,33 @@
                         taskContent.appendChild(taskText);
                         taskContent.appendChild(taskMeta);
                         
-                        // Actions (Edit & Delete)
+                        // Actions (Edit, Reminder & Delete)
                         const taskActions = document.createElement('div');
                         taskActions.className = 'task-actions';
+                        
+                        const reminderBtn = document.createElement('button');
+                        reminderBtn.className = 'reminder-btn';
+                        reminderBtn.innerHTML = '<i class="fas fa-bell"></i>';
+                        reminderBtn.title = 'Set reminder';
+                        reminderBtn.addEventListener('click', () => setReminder(task.id));
                         
                         const editBtn = document.createElement('button');
                         editBtn.className = 'edit-btn';
                         editBtn.innerHTML = '<i class="fas fa-edit"></i>';
+                        editBtn.title = 'Edit task';
                         editBtn.addEventListener('click', () => editTask(task.id));
                         
                         const deleteBtn = document.createElement('button');
                         deleteBtn.className = 'delete-btn';
                         deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+                        deleteBtn.title = 'Delete task';
                         deleteBtn.addEventListener('click', () => deleteTask(task.id));
                         
+                        taskActions.appendChild(reminderBtn);
                         taskActions.appendChild(editBtn);
                         taskActions.appendChild(deleteBtn);
                         
+                        taskItem.appendChild(dragHandle);
                         taskItem.appendChild(checkbox);
                         taskItem.appendChild(taskContent);
                         taskItem.appendChild(taskActions);
@@ -546,10 +812,38 @@
                 updateStats();
             }
             
+            // Helper function to check if date is today
+            function isToday(dateString) {
+                if (!dateString) return false;
+                const today = new Date();
+                const date = new Date(dateString);
+                return date.getDate() === today.getDate() && 
+                       date.getMonth() === today.getMonth() && 
+                       date.getFullYear() === today.getFullYear();
+            }
+            
+            // Helper function to format reminder time
+            function formatReminderTime(date) {
+                const now = new Date();
+                const diff = date - now;
+                const minutes = Math.round(diff / 60000);
+                
+                if (minutes < 60) {
+                    return `${minutes}m`;
+                } else if (minutes < 1440) {
+                    return `${Math.floor(minutes / 60)}h`;
+                } else {
+                    return `${Math.floor(minutes / 1440)}d`;
+                }
+            }
+            
             // Update Task Counter
             function updateStats() {
                 const activeTasks = tasks.filter(task => !task.completed).length;
-                taskCount.textContent = activeTasks;
+                const completedTasks = tasks.filter(task => task.completed).length;
+                
+                taskCount.textContent = `${activeTasks}`;
+                completedCount.textContent = `${completedTasks} completed`;
             }
             
             // Event Listeners
@@ -571,6 +865,9 @@
                 searchQuery = e.target.value;
                 renderTasks();
             });
+            
+            // Set default due date to today
+            dueDate.valueAsDate = new Date();
         });
     </script>
 </body>
